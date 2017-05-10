@@ -858,7 +858,8 @@ TEST_F(HttpConnectionManagerImplTest, FilterAddBodyInline) {
 
   EXPECT_CALL(*decoder_filter1, decodeHeaders(_, true))
       .WillOnce(InvokeWithoutArgs([&]() -> Http::FilterHeadersStatus {
-        decoder_filter1->callbacks_->decodingBuffer().reset(new Buffer::OwnedImpl("hello"));
+        Buffer::OwnedImpl data("hello");
+        decoder_filter1->callbacks_->addDecodedData(data);
         return Http::FilterHeadersStatus::Continue;
       }));
 
@@ -877,7 +878,8 @@ TEST_F(HttpConnectionManagerImplTest, FilterAddBodyInline) {
 
   EXPECT_CALL(*encoder_filter1, encodeHeaders(_, true))
       .WillOnce(InvokeWithoutArgs([&]() -> Http::FilterHeadersStatus {
-        encoder_filter1->callbacks_->encodingBuffer().reset(new Buffer::OwnedImpl("hello"));
+        Buffer::OwnedImpl data("hello");
+        encoder_filter1->callbacks_->addEncodedData(data);
         return Http::FilterHeadersStatus::Continue;
       }));
 
@@ -935,7 +937,8 @@ TEST_F(HttpConnectionManagerImplTest, FilterAddBodyContinuation) {
       .WillOnce(InvokeWithoutArgs(
           [&]() -> Http::FilterDataStatus { return Http::FilterDataStatus::Continue; }));
 
-  decoder_filter1->callbacks_->decodingBuffer().reset(new Buffer::OwnedImpl("hello"));
+  Buffer::OwnedImpl data("hello");
+  decoder_filter1->callbacks_->addDecodedData(data);
   decoder_filter1->callbacks_->continueDecoding();
 
   EXPECT_CALL(*encoder_filter1, encodeHeaders(_, true))
@@ -953,7 +956,8 @@ TEST_F(HttpConnectionManagerImplTest, FilterAddBodyContinuation) {
       .WillOnce(InvokeWithoutArgs(
           [&]() -> Http::FilterDataStatus { return Http::FilterDataStatus::Continue; }));
 
-  encoder_filter1->callbacks_->encodingBuffer().reset(new Buffer::OwnedImpl("hello"));
+  Buffer::OwnedImpl data2("hello");
+  encoder_filter1->callbacks_->addEncodedData(data2);
   encoder_filter1->callbacks_->continueEncoding();
 }
 

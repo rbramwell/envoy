@@ -161,9 +161,14 @@ public:
    *         receives decodeHeaders(..., true), it has the option of filling decodingBuffer() with
    *         body data. Subsequent filters will receive decodeHeaders(..., false) followed by
    *         decodeData(..., true). This works both in the direct iteration as well as the
-   *         continuation case.
+   *         continuation case.FIXFIX
    */
-  virtual Buffer::InstancePtr& decodingBuffer() PURE;
+  virtual const Buffer::Instance* decodingBuffer() PURE;
+
+  /**
+   * fixfix
+   */
+  virtual void addDecodedData(Buffer::Instance& data) PURE;
 
   /**
    * Called with headers to be encoded, optionally indicating end of stream.
@@ -260,8 +265,14 @@ public:
    *         body data. Subsequent filters will receive encodeHeaders(..., false) followed by
    *         encodeData(..., true). This works both in the direct iteration as well as the
    *         continuation case.
+   *         FIXFIX
    */
-  virtual Buffer::InstancePtr& encodingBuffer() PURE;
+  virtual const Buffer::Instance* encodingBuffer() PURE;
+
+  /**
+   * fixfix
+   */
+  virtual void addEncodedData(Buffer::Instance& data) PURE;
 };
 
 /**

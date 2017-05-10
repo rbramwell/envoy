@@ -482,8 +482,11 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(ActiveStreamDecoderFilte
   }
 
   for (; entry != decoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::DecodeHeaders));
+    state_.filter_call_state_ |= FilterCallState::DecodeHeaders;
     FilterHeadersStatus status = (*entry)->handle_->decodeHeaders(
         headers, end_stream && continue_data_entry == decoder_filters_.end());
+    state_.filter_call_state_ &= ~FilterCallState::DecodeHeaders;
     stream_log_trace("decode headers called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterHeadersCallback(status) &&
@@ -537,12 +540,25 @@ void ConnectionManagerImpl::ActiveStream::decodeData(ActiveStreamDecoderFilter* 
   }
 
   for (; entry != decoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::DecodeData));
+    state_.filter_call_state_ |= FilterCallState::DecodeData;
     FilterDataStatus status = (*entry)->handle_->decodeData(data, end_stream);
+    state_.filter_call_state_ &= ~FilterCallState::DecodeData;
     stream_log_trace("decode data called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterDataCallback(status, data)) {
       return;
     }
+  }
+}
+
+void ConnectionManagerImpl::ActiveStream::addDecodedData(ActiveStreamDecoderFilter* filter,
+                                                         Buffer::Instance& data) {
+  if (state_.filter_call_state_ == 0 ||
+      (state_.filter_call_state_ & FilterCallState::DecodeHeaders)) {
+    filter->commonHandleBufferData(data);
+  } else {
+    ASSERT(false); // fixfix
   }
 }
 
@@ -568,7 +584,10 @@ void ConnectionManagerImpl::ActiveStream::decodeTrailers(ActiveStreamDecoderFilt
   }
 
   for (; entry != decoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::DecodeTrailers));
+    state_.filter_call_state_ |= FilterCallState::DecodeTrailers;
     FilterTrailersStatus status = (*entry)->handle_->decodeTrailers(trailers);
+    state_.filter_call_state_ &= ~FilterCallState::DecodeTrailers;
     stream_log_trace("decode trailers called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterTrailersCallback(status)) {
@@ -609,8 +628,11 @@ void ConnectionManagerImpl::ActiveStream::encodeHeaders(ActiveStreamEncoderFilte
   std::list<ActiveStreamEncoderFilterPtr>::iterator continue_data_entry = encoder_filters_.end();
 
   for (; entry != encoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::EncodeHeaders));
+    state_.filter_call_state_ |= FilterCallState::EncodeHeaders;
     FilterHeadersStatus status = (*entry)->handle_->encodeHeaders(
         headers, end_stream && continue_data_entry == encoder_filters_.end());
+    state_.filter_call_state_ &= ~FilterCallState::EncodeHeaders;
     stream_log_trace("encode headers called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterHeadersCallback(status)) {
@@ -690,11 +712,24 @@ void ConnectionManagerImpl::ActiveStream::encodeHeaders(ActiveStreamEncoderFilte
   }
 }
 
+void ConnectionManagerImpl::ActiveStream::addEncodedData(ActiveStreamEncoderFilter* filter,
+                                                         Buffer::Instance& data) {
+  if (state_.filter_call_state_ == 0 ||
+      (state_.filter_call_state_ & FilterCallState::EncodeHeaders)) {
+    filter->commonHandleBufferData(data);
+  } else {
+    ASSERT(false);
+  }
+}
+
 void ConnectionManagerImpl::ActiveStream::encodeData(ActiveStreamEncoderFilter* filter,
                                                      Buffer::Instance& data, bool end_stream) {
   std::list<ActiveStreamEncoderFilterPtr>::iterator entry = commonEncodePrefix(filter, end_stream);
   for (; entry != encoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::EncodeData));
+    state_.filter_call_state_ |= FilterCallState::EncodeData;
     FilterDataStatus status = (*entry)->handle_->encodeData(data, end_stream);
+    state_.filter_call_state_ &= ~FilterCallState::EncodeData;
     stream_log_trace("encode data called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterDataCallback(status, data)) {
@@ -714,7 +749,10 @@ void ConnectionManagerImpl::ActiveStream::encodeTrailers(ActiveStreamEncoderFilt
                                                          HeaderMap& trailers) {
   std::list<ActiveStreamEncoderFilterPtr>::iterator entry = commonEncodePrefix(filter, true);
   for (; entry != encoder_filters_.end(); entry++) {
+    ASSERT(!(state_.filter_call_state_ & FilterCallState::EncodeTrailers));
+    state_.filter_call_state_ |= FilterCallState::EncodeTrailers;
     FilterTrailersStatus status = (*entry)->handle_->encodeTrailers(trailers);
+    state_.filter_call_state_ &= ~FilterCallState::EncodeTrailers;
     stream_log_trace("encode trailers called: filter={} status={}", *this,
                      static_cast<const void*>((*entry).get()), static_cast<uint64_t>(status));
     if (!(*entry)->commonHandleAfterTrailersCallback(status)) {
@@ -895,6 +933,10 @@ Router::RouteConstSharedPtr ConnectionManagerImpl::ActiveStreamFilterBase::route
   return parent_.cached_route_.value();
 }
 
+void ConnectionManagerImpl::ActiveStreamDecoderFilter::addDecodedData(Buffer::Instance& data) {
+  parent_.addDecodedData(this, data);
+}
+
 void ConnectionManagerImpl::ActiveStreamDecoderFilter::continueDecoding() { commonContinue(); }
 
 void ConnectionManagerImpl::ActiveStreamDecoderFilter::encodeHeaders(HeaderMapPtr&& headers,
@@ -911,6 +953,10 @@ void ConnectionManagerImpl::ActiveStreamDecoderFilter::encodeData(Buffer::Instan
 void ConnectionManagerImpl::ActiveStreamDecoderFilter::encodeTrailers(HeaderMapPtr&& trailers) {
   parent_.response_trailers_ = std::move(trailers);
   parent_.encodeTrailers(nullptr, *parent_.response_trailers_);
+}
+
+void ConnectionManagerImpl::ActiveStreamEncoderFilter::addEncodedData(Buffer::Instance& data) {
+  return parent_.addEncodedData(this, data);
 }
 
 void ConnectionManagerImpl::ActiveStreamEncoderFilter::continueEncoding() { commonContinue(); }
